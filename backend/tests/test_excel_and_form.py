@@ -94,6 +94,15 @@ class ExcelAndFormTests(unittest.TestCase):
         self.assertEqual(ctx.exception.error_code, "EXCEL_INVALID_FORMAT")
         self.assertIn("联系人", ctx.exception.message)
 
+    def test_legacy_form_sheet_name_is_accepted(self):
+        workbook = load_workbook(self.excel_path)
+        workbook["订单表单"].title = "订单表格"
+        workbook.save(self.excel_path)
+        workbook.close()
+
+        repository = ExcelRepository(self.excel_path)
+        repository.validate()
+
 
 if __name__ == "__main__":
     unittest.main()

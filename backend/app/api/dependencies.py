@@ -11,16 +11,17 @@ from app.services.form_service import FormService
 from app.services.intent_service import IntentService
 from app.services.knowledge_service import KnowledgeService
 from app.services.recommendation_service import RecommendationService
-from app.services.room_catalog_service import RoomCatalogService
 from app.services.room_status_service import RoomStatusService
 
 
 class AppContainer:
     def __init__(self) -> None:
         settings = get_settings()
+        room_status_service = RoomStatusService.with_random_initial_occupied()
         self.ai_gateway = AIGateway()
         self.context_service = ConversationContextService()
-        self.room_catalog = RoomCatalogService()
+        self.room_catalog = room_status_service.catalog
+        self._room_status_service = room_status_service
         self.file_service = FileService(settings.excel_work_dir)
         self.intent_service = IntentService(self.ai_gateway)
         self.knowledge_service = KnowledgeService(self.ai_gateway)
@@ -36,7 +37,8 @@ class AppContainer:
         return FormService(self.excel_repository(), self.room_catalog)
 
     def room_status_service(self) -> RoomStatusService:
-        return RoomStatusService(self.room_catalog, self.excel_repository())
+        self._room_status_service.excel_repository = self.excel_repository()
+        return self._room_status_service
 
 
 container = AppContainer()

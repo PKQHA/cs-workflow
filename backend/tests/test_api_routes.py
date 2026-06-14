@@ -12,7 +12,9 @@ def test_health_and_rooms_api():
     rooms = client.get("/api/rooms")
     assert rooms.status_code == 200
     assert rooms.json()["success"] is True
-    assert len(rooms.json()["data"]) == 32
+    room_data = rooms.json()["data"]
+    assert len(room_data) == 32
+    assert sum(1 for room in room_data if room["status"] == "已住") == 7
 
 
 def test_conversation_qa_and_booking_missing_info():

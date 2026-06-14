@@ -10,6 +10,7 @@ from app.schemas.domain import OrderForm
 
 SHEET_FORMS = "订单表单"
 SHEET_ROOM_STATUS = "房态"
+FORM_SHEET_ALIASES = (SHEET_FORMS, "订单工作表", "订单表格")
 
 FORM_HEADERS = [
     "表单唯一标识",
@@ -67,9 +68,8 @@ class ExcelRepository:
         return workbook
 
     def _validate_workbook(self, workbook) -> None:
-        if SHEET_FORMS not in workbook.sheetnames:
-            raise ExcelRepositoryError("EXCEL_INVALID_FORMAT", f"Excel 缺少工作表：{SHEET_FORMS}")
-        headers = [cell.value for cell in workbook[SHEET_FORMS][1]]
+        form_sheet = self._get_form_sheet(workbook)
+        headers = [cell.value for cell in form_sheet[1]]
         missing = [header for header in FORM_HEADERS if header not in headers]
         if missing:
             joined = "、".join(missing)
@@ -82,7 +82,7 @@ class ExcelRepository:
 
     def append_form(self, form: OrderForm) -> None:
         workbook = self._load()
-        sheet = workbook[SHEET_FORMS]
+        sheet = self._get_form_sheet(workbook)
         if self._find_form_row(sheet, form.form_id):
             workbook.close()
             raise ExcelRepositoryError("FORM_DUPLICATED", f"表单 {form.form_id} 已存在，不能重复新增。")
@@ -91,7 +91,7 @@ class ExcelRepository:
 
     def update_form(self, form: OrderForm) -> None:
         workbook = self._load()
-        sheet = workbook[SHEET_FORMS]
+        sheet = self._get_form_sheet(workbook)
         row_index = self._find_form_row(sheet, form.form_id)
         if not row_index:
             workbook.close()
@@ -102,7 +102,7 @@ class ExcelRepository:
 
     def list_pending_forms(self) -> list[dict[str, str]]:
         workbook = self._load()
-        sheet = workbook[SHEET_FORMS]
+        sheet = self._get_form_sheet(workbook)
         rows = []
         headers = [cell.value for cell in sheet[1]]
         for row in sheet.iter_rows(min_row=2, values_only=True):
@@ -114,7 +114,7 @@ class ExcelRepository:
 
     def get_form_record(self, form_id: str) -> dict[str, str] | None:
         workbook = self._load()
-        sheet = workbook[SHEET_FORMS]
+        sheet = self._get_form_sheet(workbook)
         headers = [cell.value for cell in sheet[1]]
         for row in sheet.iter_rows(min_row=2, values_only=True):
             record = dict(zip(headers, row))
@@ -163,6 +163,16 @@ class ExcelRepository:
             if sheet.cell(row=row_index, column=1).value == form_id:
                 return row_index
         return None
+
+    @staticmethod
+    def _get_form_sheet(workbook):
+        for sheet_name in FORM_SHEET_ALIASES:
+            if sheet_name in workbook.sheetnames:
+                return workbook[sheet_name]
+        raise ExcelRepositoryError(
+            "EXCEL_INVALID_FORMAT",
+            f"Excel 缺少订单工作表，支持名称：{'、'.join(FORM_SHEET_ALIASES)}",
+        )
 
     @staticmethod
     def _form_to_row(form: OrderForm) -> list[str | int | float]:
