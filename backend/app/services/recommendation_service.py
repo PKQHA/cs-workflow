@@ -1,4 +1,4 @@
-from app.core.errors import BusinessRuleError
+from app.core.errors import AppError, BusinessRuleError
 from app.rules.recommendation_rules import build_candidate_room_sets
 from app.schemas.domain import BookingDraft, RecommendationItem, Room
 from app.services.ai_gateway import AIGateway
@@ -15,10 +15,13 @@ class RecommendationService:
         results: list[RecommendationItem] = []
         for index, rooms in enumerate(candidate_sets, start=1):
             total_amount = sum(room.price_per_day for room in rooms) * int(draft.stay_days)
-            copy = self.ai_gateway.call_structured(
-                "recommendation_copy",
-                {"draft": draft.model_dump(), "rooms": [room.model_dump() for room in rooms], "total_amount": total_amount},
-            )
+            try:
+                copy = self.ai_gateway.call_structured(
+                    "recommendation_copy",
+                    {"draft": draft.model_dump(), "rooms": [room.model_dump() for room in rooms], "total_amount": total_amount},
+                )
+            except AppError:
+                copy = {}
             results.append(
                 RecommendationItem(
                     recommendation_id=f"rec_{index:03d}",

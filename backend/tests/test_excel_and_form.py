@@ -4,7 +4,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from app.core.errors import ExcelNotUploadedError, ExcelRepositoryError
+from app.core.errors import ExcelNotUploadedError
 from app.repositories.excel_repository import ExcelRepository
 from app.schemas.requests import CreateFormRequest
 from app.services.form_service import FormService
@@ -82,17 +82,20 @@ class ExcelAndFormTests(unittest.TestCase):
                 )
             )
 
-    def test_missing_header_is_reported(self):
+    def test_missing_header_is_initialized(self):
         workbook = load_workbook(self.excel_path)
         sheet = workbook["订单表单"]
         sheet.cell(row=1, column=2, value="错误表头")
         workbook.save(self.excel_path)
         workbook.close()
+
         repository = ExcelRepository(self.excel_path)
-        with self.assertRaises(ExcelRepositoryError) as ctx:
-            repository.validate()
-        self.assertEqual(ctx.exception.error_code, "EXCEL_INVALID_FORMAT")
-        self.assertIn("联系人", ctx.exception.message)
+        repository.initialize_template()
+
+        workbook = load_workbook(self.excel_path)
+        sheet = workbook["订单表单"]
+        self.assertEqual(sheet.cell(row=1, column=2).value, "联系人")
+        workbook.close()
 
     def test_legacy_form_sheet_name_is_accepted(self):
         workbook = load_workbook(self.excel_path)

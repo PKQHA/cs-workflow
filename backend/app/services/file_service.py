@@ -24,7 +24,7 @@ class FileService:
             raise AppError("UPLOAD_FAILED", "上传失败：文件为空或不存在。")
         target = self.work_dir / "current_hotel_data.xlsx"
         shutil.copyfile(source, target)
-        ExcelRepository(target).validate()
+        ExcelRepository(target).initialize_template()
         self.current_excel_path = target
         return target
 

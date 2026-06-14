@@ -166,6 +166,13 @@ class ConversationContext(BaseModel):
     recommendations: list[RecommendationItem] = Field(default_factory=list)
 
 
+class IntentRouteResult(BaseModel):
+    intent: str
+    confidence: float = Field(ge=0, le=1)
+    reason: str = Field(min_length=1)
+    slots: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+
+
 class ExcelRow(BaseModel):
     form_id: str
     contact_name: str

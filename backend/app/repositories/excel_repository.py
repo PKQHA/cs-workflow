@@ -64,21 +64,17 @@ class ExcelRepository:
             raise ExcelRepositoryError("EXCEL_WRITE_FAILED", "Excel 文件被占用，无法写入。请关闭文件后重试。") from exc
         except (InvalidFileException, OSError, ValueError) as exc:
             raise ExcelRepositoryError("EXCEL_INVALID_FORMAT", "Excel 文件格式错误，无法读取。请上传有效的 .xlsx 文件。") from exc
-        self._validate_workbook(workbook)
         return workbook
 
-    def _validate_workbook(self, workbook) -> None:
-        form_sheet = self._get_form_sheet(workbook)
-        headers = [cell.value for cell in form_sheet[1]]
-        missing = [header for header in FORM_HEADERS if header not in headers]
-        if missing:
-            joined = "、".join(missing)
-            raise ExcelRepositoryError("EXCEL_INVALID_FORMAT", f"Excel 表头缺失：{joined}")
-        if SHEET_ROOM_STATUS not in workbook.sheetnames:
-            workbook.create_sheet(SHEET_ROOM_STATUS).append(ROOM_STATUS_HEADERS)
+    def initialize_template(self) -> None:
+        workbook = self._load()
+        self._ensure_workbook_structure(workbook)
+        self._atomic_save(workbook)
 
     def validate(self) -> None:
-        self._load().close()
+        workbook = self._load()
+        self._ensure_workbook_structure(workbook)
+        workbook.close()
 
     def append_form(self, form: OrderForm) -> None:
         workbook = self._load()
@@ -169,10 +165,35 @@ class ExcelRepository:
         for sheet_name in FORM_SHEET_ALIASES:
             if sheet_name in workbook.sheetnames:
                 return workbook[sheet_name]
-        raise ExcelRepositoryError(
-            "EXCEL_INVALID_FORMAT",
-            f"Excel 缺少订单工作表，支持名称：{'、'.join(FORM_SHEET_ALIASES)}",
-        )
+        if len(workbook.sheetnames) == 1:
+            sheet = workbook[workbook.sheetnames[0]]
+            sheet.title = SHEET_FORMS
+            return sheet
+        return workbook.create_sheet(SHEET_FORMS, 0)
+
+    @staticmethod
+    def _ensure_sheet_headers(sheet, headers: list[str]) -> bool:
+        changed = False
+        for column_index, header in enumerate(headers, start=1):
+            if sheet.cell(row=1, column=column_index).value != header:
+                sheet.cell(row=1, column=column_index, value=header)
+                changed = True
+        return changed
+
+    def _ensure_workbook_structure(self, workbook) -> bool:
+        changed = False
+        form_sheet = self._get_form_sheet(workbook)
+        if form_sheet.title != SHEET_FORMS:
+            form_sheet.title = SHEET_FORMS
+            changed = True
+        changed = self._ensure_sheet_headers(form_sheet, FORM_HEADERS) or changed
+        if SHEET_ROOM_STATUS in workbook.sheetnames:
+            room_status_sheet = workbook[SHEET_ROOM_STATUS]
+        else:
+            room_status_sheet = workbook.create_sheet(SHEET_ROOM_STATUS)
+            changed = True
+        changed = self._ensure_sheet_headers(room_status_sheet, ROOM_STATUS_HEADERS) or changed
+        return changed
 
     @staticmethod
     def _form_to_row(form: OrderForm) -> list[str | int | float]:

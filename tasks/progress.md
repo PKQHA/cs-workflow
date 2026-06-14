@@ -16,9 +16,9 @@
 | 配置与环境变量 | `tasks/config.md` | 已完成 |
 | 数据结构与 Schema | `tasks/schemas.md` | 已完成 |
 | 会话上下文 | `tasks/conversation-context.md` | 已完成 |
-| AI 网关 | `tasks/ai-gateway.md` | 进行中 |
+| AI 网关 | `tasks/ai-gateway.md` | 已完成 |
 | 意图识别 | `tasks/intent.md` | 进行中 |
-| 知识问答 | `tasks/knowledge.md` | 进行中 |
+| 知识问答 | `tasks/knowledge.md` | 已完成 |
 | 订房信息抽取 | `tasks/booking-extract.md` | 已完成 |
 | 订房必填校验规则 | `tasks/booking-rules.md` | 已完成 |
 | 房间目录 | `tasks/room-catalog.md` | 已完成 |

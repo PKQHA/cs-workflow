@@ -3,7 +3,7 @@
 - [x] 创建后端测试目录结构
 - [x] 配置 `pytest`
 - [x] 配置测试用临时 Excel 工具
-- [ ] 配置 AI Mock Fixture
+- [x] 配置 AI Mock Fixture
 - [ ] 配置会话上下文假存储 Fixture
 - [x] 补充规则层测试
 - [x] 补充服务层测试

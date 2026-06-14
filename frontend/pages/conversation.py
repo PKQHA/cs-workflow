@@ -43,6 +43,10 @@ def _render_analysis(data: dict, api_client: BackendApiClient, session_id: str) 
         st.write(data.get("reply", ""))
         return
 
+    if data.get("intent") == "unknown":
+        st.info(data.get("reply", "我可以帮您查询酒店信息，也可以帮您订房，请问您现在需要哪一种？"))
+        return
+
     if data.get("status") == "missing_info":
         st.warning(data.get("reply", "订房信息不足，请继续补充。"))
         missing = data.get("missing_fields") or []

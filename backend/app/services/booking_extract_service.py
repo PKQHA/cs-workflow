@@ -11,7 +11,40 @@ class BookingExtractService:
 
     def extract(self, text: str, existing: BookingDraft | None = None) -> BookingDraft:
         base = existing or BookingDraft()
-        draft = BookingDraft(
+        model_draft = self._extract_with_model(text, base)
+        rule_draft = self._extract_with_rules(text)
+        merged = base.model_copy(
+            update={
+                "guest_count": self._choose_value(model_draft.guest_count, rule_draft.guest_count, base.guest_count),
+                "room_count": self._choose_value(model_draft.room_count, rule_draft.room_count, base.room_count),
+                "budget": self._choose_value(model_draft.budget, rule_draft.budget, base.budget),
+                "stay_days": self._choose_value(model_draft.stay_days, rule_draft.stay_days, base.stay_days),
+                "guest_type": self._choose_value(model_draft.guest_type, rule_draft.guest_type, base.guest_type),
+                "preferences": self._merge_preferences(base.preferences, model_draft.preferences, rule_draft.preferences),
+            }
+        )
+        return merged.model_copy(update={"guest_type": normalize_guest_type(merged)})
+
+    def _extract_with_model(self, text: str, base: BookingDraft) -> BookingDraft:
+        try:
+            result = self.ai_gateway.call_structured(
+                "booking_extract",
+                {"text": text, "existing": base.model_dump()},
+            )
+        except Exception:
+            return BookingDraft()
+        preferences = result.get("preferences")
+        return BookingDraft(
+            guest_count=self._coerce_positive_int(result.get("guest_count")),
+            room_count=self._coerce_positive_int(result.get("room_count")),
+            budget=self._coerce_positive_float(result.get("budget")),
+            stay_days=self._coerce_positive_int(result.get("stay_days")),
+            guest_type=self._coerce_guest_type(result.get("guest_type")),
+            preferences=[str(item).strip() for item in preferences if str(item).strip()] if isinstance(preferences, list) else [],
+        )
+
+    def _extract_with_rules(self, text: str) -> BookingDraft:
+        return BookingDraft(
             guest_count=self._number_before_any_unit(text, ("人", "位")),
             room_count=self._number_before_any_unit(text, ("间", "房")),
             budget=self._first_float(text, (r"预算\s*(\d+(?:\.\d+)?)", r"(\d+(?:\.\d+)?)\s*(?:r|元|块)")),
@@ -19,17 +52,6 @@ class BookingExtractService:
             guest_type=self._guest_type(text),
             preferences=self._preferences(text),
         )
-        merged = base.model_copy(
-            update={
-                "guest_count": draft.guest_count if draft.guest_count is not None else base.guest_count,
-                "room_count": draft.room_count if draft.room_count is not None else base.room_count,
-                "budget": draft.budget if draft.budget is not None else base.budget,
-                "stay_days": draft.stay_days if draft.stay_days is not None else base.stay_days,
-                "guest_type": draft.guest_type if draft.guest_type is not None else base.guest_type,
-                "preferences": [*base.preferences, *[p for p in draft.preferences if p not in base.preferences]],
-            }
-        )
-        return merged.model_copy(update={"guest_type": normalize_guest_type(merged)})
 
     @staticmethod
     def _first_int(text: str, patterns: tuple[str, ...]) -> int | None:
@@ -74,3 +96,47 @@ class BookingExtractService:
         if "特殊" in text or "套房" in text:
             preferences.append("特殊房")
         return preferences
+
+    @staticmethod
+    def _choose_value(model_value, rule_value, base_value):
+        if model_value not in (None, "", []):
+            return model_value
+        if rule_value not in (None, "", []):
+            return rule_value
+        return base_value
+
+    @staticmethod
+    def _merge_preferences(*groups: list[str]) -> list[str]:
+        merged: list[str] = []
+        for group in groups:
+            for item in group:
+                if item not in merged:
+                    merged.append(item)
+        return merged
+
+    @staticmethod
+    def _coerce_positive_int(value: object) -> int | None:
+        try:
+            if value in (None, ""):
+                return None
+            number = int(float(str(value)))
+        except (TypeError, ValueError):
+            return None
+        return number if number > 0 else None
+
+    @staticmethod
+    def _coerce_positive_float(value: object) -> float | None:
+        try:
+            if value in (None, ""):
+                return None
+            number = float(str(value))
+        except (TypeError, ValueError):
+            return None
+        return number if number > 0 else None
+
+    @staticmethod
+    def _coerce_guest_type(value: object) -> str | None:
+        normalized = str(value).strip() if value not in (None, "") else None
+        if normalized in {"个人", "多人", "企业团建", "情侣"}:
+            return normalized
+        return None
