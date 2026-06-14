@@ -54,6 +54,14 @@ def create_app():
     async def health():
         return {"success": True, "data": {"status": "ok", "version": settings.app_version}}
 
+    @app.get("/")
+    async def root():
+        return {
+            "success": True,
+            "message": "Hotel backend is running.",
+            "data": {"health": "/health", "version": settings.app_version},
+        }
+
     from app.api import complaints, conversation, files, forms, rooms
 
     for module in (conversation, rooms, forms, complaints, files):
