@@ -1,0 +1,16 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      BACKEND_PORT: "7860"
+      MODEL_PROVIDER: "mock"
+      EXCEL_WORK_DIR: "/app/data"
+    ports:
+      - "7860:7860"
+    volumes:
+      - backend-data:/app/data
+
+volumes:
+  backend-data:
