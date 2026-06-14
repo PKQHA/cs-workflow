@@ -55,6 +55,8 @@ def render_forms_page(api_client: BackendApiClient) -> None:
                         st.success(f"表单创建成功：{result.get('form_id')}")
                     except ApiClientError as exc:
                         st.error(exc.message)
+                    except Exception:
+                        st.error("创建表单时出现异常，请稍后重试。")
 
     with tab_pending:
         if "pending_forms_data" not in st.session_state:
@@ -96,3 +98,5 @@ def _render_pending_forms(api_client: BackendApiClient, pending_forms: list[dict
                     st.rerun()
                 except ApiClientError as exc:
                     st.error(exc.message)
+                except Exception:
+                    st.error("更新表单状态时出现异常，请稍后重试。")
