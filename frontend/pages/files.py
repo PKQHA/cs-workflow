@@ -11,12 +11,22 @@ def render_files_page(api_client: BackendApiClient) -> None:
     workspace_id = get_workspace_id()
     if workspace_id:
         st.caption(f"当前工作区：{workspace_id}")
+
     try:
         status = api_client.get("/api/files/status")
         if status.get("uploaded"):
             st.success("当前工作区已上传 Excel，可执行保存类操作。")
-            try:
-                file_bytes = api_client.download_file("/api/files/download")
+
+            if st.button("准备下载当前 Excel", key="prepare_excel_download"):
+                try:
+                    st.session_state.current_excel_download = api_client.download_file("/api/files/download")
+                    st.success("当前 Excel 已准备好，请点击下方按钮保存。")
+                except ApiClientError as exc:
+                    st.session_state.current_excel_download = None
+                    st.error(exc.message)
+
+            file_bytes = st.session_state.get("current_excel_download")
+            if file_bytes:
                 st.download_button(
                     "下载当前 Excel",
                     data=file_bytes,
@@ -24,8 +34,6 @@ def render_files_page(api_client: BackendApiClient) -> None:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=False,
                 )
-            except ApiClientError as exc:
-                st.error(exc.message)
         else:
             st.warning("当前工作区未上传 Excel，新增表单、修改表单、修改房态会被后端拦截。")
     except ApiClientError as exc:
@@ -44,6 +52,7 @@ def render_files_page(api_client: BackendApiClient) -> None:
                 )
             if result.get("workspace_id"):
                 set_workspace_id(str(result["workspace_id"]))
+            st.session_state.current_excel_download = None
             st.success(f"上传成功：{result.get('file_name')}")
             st.rerun()
         except ApiClientError as exc:
