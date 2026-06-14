@@ -10,14 +10,27 @@ from frontend.pages.rooms import render_rooms_page
 from frontend.services.api_client import ApiClientError, get_api_client, get_backend_base_url
 
 
+def hide_streamlit_default_navigation() -> None:
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebarNav"] {
+            display: none;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def main() -> None:
     st.set_page_config(page_title="酒店客服自动化系统", layout="wide")
+    hide_streamlit_default_navigation()
     st.title("酒店客服自动化系统")
 
     try:
-        base_url = get_backend_base_url()
+        get_backend_base_url()
         api_client = get_api_client()
-        st.sidebar.success(f"后端：{base_url}")
     except ApiClientError as exc:
         st.error(exc.message)
         st.stop()
