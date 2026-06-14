@@ -44,18 +44,28 @@ def render_forms_page(api_client: BackendApiClient) -> None:
                     st.error(exc.message)
 
     with tab_pending:
-        if st.button("刷新待完成表单"):
-            _render_pending_forms(api_client)
-        _render_pending_forms(api_client)
+        if "pending_forms_data" not in st.session_state:
+            st.session_state.pending_forms_data = None
+
+        if st.button("加载/刷新待完成表单"):
+            st.session_state.pending_forms_data = _load_pending_forms(api_client)
+
+        pending_forms = st.session_state.pending_forms_data
+        if pending_forms is None:
+            st.info("点击“加载/刷新待完成表单”后查看当前待完成记录。")
+        else:
+            _render_pending_forms(api_client, pending_forms)
 
 
-def _render_pending_forms(api_client: BackendApiClient) -> None:
+def _load_pending_forms(api_client: BackendApiClient) -> list[dict] | None:
     try:
-        pending_forms = api_client.get("/api/forms/pending") or []
+        return api_client.get("/api/forms/pending") or []
     except ApiClientError as exc:
         st.error(exc.message)
-        return
+        return None
 
+
+def _render_pending_forms(api_client: BackendApiClient, pending_forms: list[dict]) -> None:
     if not pending_forms:
         st.info("所有表单已完成，或当前没有待完成表单。")
         return
@@ -68,6 +78,7 @@ def _render_pending_forms(api_client: BackendApiClient) -> None:
                 try:
                     with st.spinner("正在更新表单状态…"):
                         api_client.post("/api/forms/complete", {"form_id": form_id})
+                    st.session_state.pending_forms_data = _load_pending_forms(api_client)
                     st.success("已更新为已完成")
                     st.rerun()
                 except ApiClientError as exc:
