@@ -1,4 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
+
+import re
 
 import streamlit as st
 
@@ -22,26 +24,37 @@ def render_forms_page(api_client: BackendApiClient) -> None:
             order_status = st.selectbox("订单状态", ["已完成", "待完成"])
             submitted = st.form_submit_button("创建表单")
             if submitted:
+                contact_name = contact_name.strip()
+                phone = phone.strip()
                 room_numbers = [item.strip() for item in room_numbers_text.split(",") if item.strip()]
-                try:
-                    with st.spinner("正在创建表单…"):
-                        result = api_client.post(
-                            "/api/forms/create",
-                            {
-                                "contact_name": contact_name,
-                                "gender": gender,
-                                "phone": phone,
-                                "total_amount": total_amount,
-                                "guest_count": guest_count,
-                                "guest_type": guest_type,
-                                "stay_days": stay_days,
-                                "room_numbers": room_numbers,
-                                "order_status": order_status,
-                            },
-                        )
-                    st.success(f"表单创建成功：{result.get('form_id')}")
-                except ApiClientError as exc:
-                    st.error(exc.message)
+                if not contact_name:
+                    st.error("联系人不能为空。")
+                elif not re.fullmatch(r"^1[3-9]\d{9}$", phone):
+                    st.error("请输入有效的 11 位手机号。")
+                elif total_amount <= 0:
+                    st.error("总金额必须大于 0。")
+                elif not room_numbers:
+                    st.error("请至少填写一个房间号。")
+                else:
+                    try:
+                        with st.spinner("正在创建表单…"):
+                            result = api_client.post(
+                                "/api/forms/create",
+                                {
+                                    "contact_name": contact_name,
+                                    "gender": gender,
+                                    "phone": phone,
+                                    "total_amount": total_amount,
+                                    "guest_count": guest_count,
+                                    "guest_type": guest_type,
+                                    "stay_days": stay_days,
+                                    "room_numbers": room_numbers,
+                                    "order_status": order_status,
+                                },
+                            )
+                        st.success(f"表单创建成功：{result.get('form_id')}")
+                    except ApiClientError as exc:
+                        st.error(exc.message)
 
     with tab_pending:
         if "pending_forms_data" not in st.session_state:
