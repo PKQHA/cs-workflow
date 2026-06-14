@@ -1,12 +1,12 @@
-# 模块任务：意图识别
-
+﻿# 模块任务：意图识别
 - [x] 创建意图识别服务
 - [x] 接入 AI 网关
-- [x] 定义输出仅允许 `qa` 或 `booking`
-- [x] 扩展结构化 `intent_router` 输出：`qa` / `booking` / `unknown`
+- [x] 定义输出仅允许 `qa`、`booking`、`unknown`
+- [x] 扩展结构化 `intent_router` 输出：`qa / booking / unknown`
 - [x] 支持结合上下文判断意图
-- [x] 实现异常时的安全降级策略
-- [x] 设计最小 Prompt 参数结构
-- [x] 编写单元测试：问答场景
-- [x] 编写单元测试：订房场景
-- [x] 编写单元测试：边界模糊场景
+- [x] 明确房态查询优先归类为 `qa`
+- [x] 让 QA 与 booking 先经过 `intent_router` 分流
+- [x] 仅在显式订房意图或多个订房槽位同时出现时进入 booking
+- [x] 不确定时返回 `unknown` 进入澄清
+- [x] 编写单元测试：晚饭咨询保持在 `qa`
+- [x] 编写单元测试：`我要订房` 和隐式订房槽位进入 booking

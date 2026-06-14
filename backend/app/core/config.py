@@ -18,6 +18,10 @@ class Settings(BaseModel):
     model_base_url: str | None = None
     model_api_key: str | None = None
     model_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
+    embedding_model_name: str | None = None
+    embedding_base_url: str | None = None
+    embedding_api_key: str | None = None
+    rag_top_k: int = Field(default=4, ge=1, le=10)
     log_level: str = "INFO"
 
     @field_validator("log_level")
@@ -81,6 +85,10 @@ def get_settings() -> Settings:
             model_base_url=_env("MODEL_BASE_URL", _env("OPENAI_BASE_URL", env_file_values=env_file_values), env_file_values),
             model_api_key=_env("MODEL_API_KEY", _env("OPENAI_API_KEY", env_file_values=env_file_values), env_file_values),
             model_timeout_seconds=float(_env("MODEL_TIMEOUT_SECONDS", "20", env_file_values) or "20"),
+            embedding_model_name=_env("EMBEDDING_MODEL_NAME", _env("MODEL_NAME", "mock-hotel-assistant", env_file_values), env_file_values),
+            embedding_base_url=_env("EMBEDDING_BASE_URL", _env("MODEL_BASE_URL", _env("OPENAI_BASE_URL", env_file_values=env_file_values), env_file_values), env_file_values),
+            embedding_api_key=_env("EMBEDDING_API_KEY", _env("MODEL_API_KEY", _env("OPENAI_API_KEY", env_file_values=env_file_values), env_file_values), env_file_values),
+            rag_top_k=int(_env("RAG_TOP_K", "4", env_file_values) or "4"),
             log_level=_env("LOG_LEVEL", "INFO", env_file_values),
         )
     except (ValidationError, ValueError) as exc:

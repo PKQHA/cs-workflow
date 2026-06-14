@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 
 from app.core.errors import BusinessRuleError
 from app.services.room_catalog_service import RoomCatalogService
@@ -33,6 +33,14 @@ class RoomServiceTests(unittest.TestCase):
         service = RoomStatusService(RoomCatalogService())
         with self.assertRaises(BusinessRuleError):
             service.release_room_to_available("201")
+
+    def test_build_room_status_reply(self):
+        service = RoomStatusService(RoomCatalogService({"207": "已住"}))
+        self.assertIn("已住", service.build_room_status_reply("207"))
+
+    def test_build_availability_reply_contains_count(self):
+        service = RoomStatusService(RoomCatalogService())
+        self.assertIn("可用空房数量", service.build_availability_reply())
 
 
 if __name__ == "__main__":

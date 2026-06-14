@@ -1,6 +1,7 @@
-import json
+﻿import json
 import logging
 import re
+from hashlib import sha256
 from time import perf_counter
 from typing import Any
 
@@ -8,6 +9,7 @@ import httpx
 
 from app.core.config import get_settings
 from app.core.errors import AppError
+from app.prompts.system_prompts import get_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,9 @@ class AIGateway:
         self.model_name = (model_name or settings.model_name).strip()
         self.api_key = api_key if api_key is not None else settings.model_api_key
         self.base_url = (base_url or settings.model_base_url or "https://api.openai.com/v1").rstrip("/")
+        self.embedding_model_name = (settings.embedding_model_name or self.model_name).strip()
+        self.embedding_base_url = (settings.embedding_base_url or self.base_url).rstrip("/")
+        self.embedding_api_key = settings.embedding_api_key if settings.embedding_api_key is not None else self.api_key
         self.timeout_seconds = timeout_seconds or settings.model_timeout_seconds
 
     def call_structured(self, prompt_name: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -47,7 +52,7 @@ class AIGateway:
         finally:
             elapsed_ms = round((perf_counter() - started) * 1000, 2)
             logger.info(
-                "AI 网关调用完成 prompt=%s provider=%s fallback=%s elapsed_ms=%s",
+                "AI gateway completed prompt=%s provider=%s fallback=%s elapsed_ms=%s",
                 prompt_name,
                 self.provider,
                 fallback_used,
@@ -58,6 +63,29 @@ class AIGateway:
         if not text:
             raise AppError("AI_RESPONSE_INVALID", "AI 返回为空，无法继续处理。")
         return " ".join(text.strip().split())
+
+    def embed_texts(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        if self.provider == "mock":
+            return [self._mock_embedding(text) for text in texts]
+        if not self.embedding_api_key:
+            raise AppError("AI_PROVIDER_NOT_CONFIGURED", "未配置 Embedding API Key，无法调用向量模型。")
+        headers = {"Authorization": f"Bearer {self.embedding_api_key}", "Content-Type": "application/json"}
+        request_body = {"model": self.embedding_model_name, "input": texts}
+        try:
+            with httpx.Client(timeout=self.timeout_seconds) as client:
+                response = client.post(f"{self.embedding_base_url}/embeddings", headers=headers, json=request_body)
+        except httpx.HTTPError as exc:
+            raise AppError("AI_GATEWAY_FAILED", f"Embedding 调用失败：{exc}") from exc
+        if response.status_code >= 400:
+            raise AppError("AI_GATEWAY_FAILED", f"Embedding 服务返回错误：HTTP {response.status_code}")
+        try:
+            response_json = response.json()
+            data = response_json["data"]
+            return [list(item["embedding"]) for item in sorted(data, key=lambda item: item["index"])]
+        except (ValueError, KeyError, TypeError) as exc:
+            raise AppError("AI_RESPONSE_INVALID", "Embedding 返回结构不合法。") from exc
 
     def _call_openai_compatible(self, prompt_name: str, payload: dict[str, Any]) -> dict[str, Any]:
         if not self.api_key:
@@ -102,45 +130,12 @@ class AIGateway:
             raise AppError("AI_RESPONSE_INVALID", "AI 服务返回了非 JSON 数据。") from exc
 
     def _build_messages(self, prompt_name: str, payload: dict[str, Any]) -> list[dict[str, str]]:
-        instructions = {
-            "intent": (
-                "你是酒店客服意图路由器。"
-                "你只能返回 JSON。"
-                "intent 只能是 qa、booking、unknown。"
-                "当问题是酒店信息咨询、房态询问、设施服务说明时，用 qa。"
-                "当用户明确要订房、安排房间、询问适合入住方案时，用 booking。"
-                "不确定时用 unknown，不要强行归为 booking。"
-            ),
-            "booking_extract": (
-                "你是酒店订房信息抽取器。"
-                "你只能返回 JSON。"
-                "从用户表达和已有上下文中提取 guest_count、room_count、budget、stay_days、guest_type、preferences。"
-                "无法确定的字段返回 null。preferences 返回字符串数组。"
-                "不要臆造数字。"
-            ),
-            "knowledge_answer": (
-                "你是酒店客服答疑助手。"
-                "你只能依据提供的知识库上下文回答。"
-                "如果知识库上下文不足以支撑答案，请返回 grounded=false，并给出保守回复。"
-                "只返回 JSON。"
-            ),
-            "recommendation_copy": (
-                "你是酒店订房推荐文案助手。"
-                "只能根据提供的候选房间和价格信息生成稳定、简洁的中文推荐理由。"
-                "不要修改房号、价格或房态。"
-                "只返回 JSON。"
-            ),
-            "complaint_analysis": (
-                "你是酒店投诉理解助手。"
-                "你需要提炼 complaint_type、severity，并生成安抚回复和处理建议。"
-                "complaint_type 必须使用现有中文类型，severity 必须是 轻度、中度 或 重度。"
-                "不确定时可留空，但必须返回合法 JSON。"
-            ),
-        }
-        if prompt_name not in instructions:
+        try:
+            system_prompt = get_prompt(prompt_name)
+        except KeyError:
             raise AppError("AI_PROMPT_NOT_SUPPORTED", f"暂不支持的 AI prompt：{prompt_name}")
         return [
-            {"role": "system", "content": instructions[prompt_name]},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
         ]
 
@@ -176,22 +171,51 @@ class AIGateway:
 
     def _mock_response(self, prompt_name: str, payload: dict[str, Any]) -> dict[str, Any]:
         text = str(payload.get("text", ""))
+        lowered = text.lower()
         if prompt_name == "intent":
-            qa_words = ("退房", "早餐", "晚饭", "晚餐", "保洁", "发票", "停车", "Wi-Fi", "wifi", "押金", "宠物", "加床")
-            if any(word in text for word in qa_words):
-                return {"intent": "qa", "confidence": 0.9, "reason": "命中答疑关键词。", "slots": {}}
-            booking_words = ("住", "订", "预算", "人", "天", "入住", "房型")
-            if any(word in text for word in booking_words):
-                return {"intent": "booking", "confidence": 0.8, "reason": "命中订房关键词。", "slots": {}}
-            return {"intent": "unknown", "confidence": 0.4, "reason": "未命中明确关键词。", "slots": {}}
+            if re.search(r"(?<!\d)([2-6]0[1-7])(?!\d)", text) and any(word in text for word in ("空", "住", "房态", "有人", "状态")):
+                room_number = re.search(r"(?<!\d)([2-6]0[1-7])(?!\d)", text).group(1)
+                return {
+                    "intent": "qa",
+                    "confidence": 0.99,
+                    "reason": "识别为具体房号的房态查询。",
+                    "slots": {"room_number": room_number, "qa_type": "room_status"},
+                }
+            if any(phrase in text for phrase in ("还有空房", "有空房", "还有房吗", "有没有房", "房态")):
+                return {"intent": "qa", "confidence": 0.96, "reason": "识别为房态查询。", "slots": {"qa_type": "room_availability"}}
+            if any(phrase in text for phrase in ("我要订房", "帮我订房", "预订房间", "安排住宿", "推荐房型")):
+                return {"intent": "booking", "confidence": 0.95, "reason": "识别为明确订房意图。", "slots": {}}
+            slot_signals = 0
+            for pattern in (
+                r"\d+\s*(?:人|位)",
+                r"\d+\s*(?:间|个房间|间房)",
+                r"\d+\s*(?:晚|天)",
+                r"预算\s*\d+|\d+\s*(?:元|块)",
+                r"今天入住|明天入住|后天入住|\d+月\d+日入住|入住日期",
+                r"安静|高楼层|亲子|老人|孩子|情侣|家庭|房型偏好",
+            ):
+                if re.search(pattern, text):
+                    slot_signals += 1
+            if slot_signals >= 2:
+                return {"intent": "booking", "confidence": 0.92, "reason": "识别到多个订房槽位。", "slots": {}}
+            if any(word in lowered for word in ("早餐", "早饭", "晚饭", "晚餐", "餐厅", "发票", "停车", "wifi", "wi-fi", "宠物", "加床", "退房")):
+                return {"intent": "qa", "confidence": 0.9, "reason": "识别为酒店咨询问题。", "slots": {"qa_type": "knowledge"}}
+            return {"intent": "unknown", "confidence": 0.4, "reason": "暂时无法确定意图。", "slots": {}}
         if prompt_name == "booking_extract":
             return {}
         if prompt_name == "knowledge_answer":
-            return {"reply": "您好，当前演示知识库暂未覆盖该问题，建议您记录客户诉求后联系前台或值班经理进一步确认。", "grounded": False}
+            knowledge_items = payload.get("knowledge_items") or []
+            if not knowledge_items:
+                return {"reply": "您好，暂时没有查到相关信息，需要客服进一步确认。", "grounded": False}
+            first_item = knowledge_items[0]
+            content = str(first_item.get("content", "")).strip()
+            if not content:
+                return {"reply": "您好，暂时没有查到相关信息，需要客服进一步确认。", "grounded": False}
+            return {"reply": content, "grounded": True}
         if prompt_name == "recommendation_copy":
             return {
-                "reason_text": "该方案基于当前空房、预算和入住人数生成，价格相对合适。",
-                "reply_text": "您好，已根据您的需求为您整理出可选入住方案，您可以直接确认其中一个方案。",
+                "reason_text": "该方案基于当前空房、预算和入住人数生成，匹配度较高。",
+                "reply_text": "您好，已根据您的需求整理出可选入住方案，您可以直接确认其中一个方案。",
             }
         if prompt_name == "complaint_analysis":
             complaint_type = str(payload.get("type", "服务态度"))
@@ -201,8 +225,13 @@ class AIGateway:
                 "severity": severity,
                 "comfort_reply": "非常抱歉给您带来不佳的入住体验，我们会立即记录并协助处理。",
                 "solution": "安排工作人员尽快核实并提供现场补救。",
-                "compensation": "可根据现场情况提供合理演示补偿。",
+                "compensation": "可根据现场情况提供合理补偿。",
                 "escalation_note": "该问题建议上报上级，由管理人员进一步跟进。",
                 "escalation_summary": text[:120],
             }
         return {}
+
+    @staticmethod
+    def _mock_embedding(text: str) -> list[float]:
+        digest = sha256(text.encode("utf-8")).digest()
+        return [((byte / 255.0) * 2.0) - 1.0 for byte in digest[:16]]

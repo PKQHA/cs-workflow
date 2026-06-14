@@ -136,6 +136,18 @@ class ExcelRepository:
             sheet.cell(row=target_row, column=3, value=now_text)
         self._atomic_save(workbook)
 
+    def list_room_statuses(self) -> dict[str, str]:
+        workbook = self._load()
+        sheet = workbook[SHEET_ROOM_STATUS]
+        statuses: dict[str, str] = {}
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            room_number = str(row[0] or "").strip()
+            status = str(row[1] or "").strip()
+            if room_number and status:
+                statuses[room_number] = status
+        workbook.close()
+        return statuses
+
     def _atomic_save(self, workbook) -> None:
         path = self._ensure_uploaded()
         tmp_name = None

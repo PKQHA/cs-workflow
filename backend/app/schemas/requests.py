@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+﻿from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.domain import ORDER_STATUSES, ROOM_STATUSES
 
@@ -33,6 +33,7 @@ class FromRecommendationRequest(BaseModel):
     contact_name: str = Field(min_length=1)
     gender: str = Field(min_length=1)
     phone: str = Field(pattern=r"^1[3-9]\d{9}$")
+    selected_room_numbers: list[str] | None = None
     order_status: str = "已完成"
 
     @field_validator("order_status")

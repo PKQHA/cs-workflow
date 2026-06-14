@@ -1,4 +1,4 @@
-import tempfile
+﻿import tempfile
 import unittest
 from pathlib import Path
 
@@ -14,6 +14,7 @@ from app.services.intent_service import IntentService
 from app.services.knowledge_service import KnowledgeService
 from app.services.recommendation_service import RecommendationService
 from app.services.room_catalog_service import RoomCatalogService
+from app.services.room_status_service import RoomStatusService
 
 
 class AIBusinessServiceTests(unittest.TestCase):
@@ -33,8 +34,9 @@ class AIBusinessServiceTests(unittest.TestCase):
 
     def test_intent_detection(self):
         service = IntentService(self._mock_gateway())
-        self.assertEqual(service.detect("我们3个人住1天"), "booking")
+        self.assertEqual(service.detect("7个人住2晚预算1000"), "booking")
         self.assertEqual(service.detect("早餐几点开始"), "qa")
+        self.assertEqual(service.detect("我要订房"), "booking")
 
     def test_intent_router_handles_room_status_and_unknown(self):
         service = IntentService(self._mock_gateway())
@@ -42,37 +44,81 @@ class AIBusinessServiceTests(unittest.TestCase):
         self.assertEqual(room_status.intent, "qa")
         self.assertEqual(room_status.slots["room_number"], "207")
 
+        availability = service.route("还有空房吗")
+        self.assertEqual(availability.intent, "qa")
+        self.assertEqual(availability.slots["qa_type"], "room_availability")
+
         unknown = service.route("你好")
         self.assertEqual(unknown.intent, "unknown")
 
     def test_knowledge_hit_and_fallback(self):
         service = KnowledgeService(self._mock_gateway())
-        self.assertIn("12点", service.answer("退房时间是几点"))
-        self.assertIn("暂未覆盖", service.answer("附近有没有剧院"))
-        self.assertEqual(service.answer("晚饭有什么"), "我暂时没有查到晚餐信息，请客服确认后补充。")
+        self.assertIn("12", service.answer("退房时间是几点"))
+        self.assertIn("暂时没有查到", service.answer("附近有没有剧院"))
+        self.assertIn("晚餐", service.answer("晚饭有什么"))
+        self.assertIn("Wi-Fi", service.answer("房间可以上网吗"))
+
+    def test_knowledge_retrieval_handles_non_keyword_phrasing(self):
+        service = KnowledgeService(self._mock_gateway())
+        restaurant = service.retrieve("餐厅在几楼")
+        breakfast = service.retrieve("早餐去哪吃")
+        self.assertTrue(any(item["id"] == "restaurant_location" for item in restaurant))
+        self.assertTrue(any(item["id"] in {"restaurant_location", "breakfast_time"} for item in breakfast))
 
     def test_knowledge_can_use_grounded_model_answer(self):
         service = KnowledgeService(
             self._mock_gateway(
                 canned_responses={
                     "knowledge_answer": {
-                        "reply": "根据现有酒店信息，早餐在二楼餐厅供应。",
+                        "reply": "您好，早餐在二楼餐厅供应。",
                         "grounded": True,
                     }
                 }
             )
         )
-        self.assertEqual(service.answer("早餐在哪吃"), "根据现有酒店信息，早餐在二楼餐厅供应。")
+        self.assertEqual(service.answer("早餐在哪吃"), "您好，早餐在二楼餐厅供应。")
+
+    def test_knowledge_prefers_local_answer_for_high_confidence_hit(self):
+        gateway = AIGateway(provider="openai", api_key="")
+        service = KnowledgeService(gateway)
+        self.assertIn("12", service.answer("退房时间是几点"))
+
+    def test_knowledge_returns_confirmation_when_model_is_not_grounded(self):
+        service = KnowledgeService(
+            self._mock_gateway(
+                canned_responses={
+                    "knowledge_answer": {
+                        "reply": "我猜测应该有。",
+                        "grounded": False,
+                    }
+                }
+            )
+        )
+        self.assertIn("二楼餐厅", service.answer("早餐去哪吃"))
+
+    def test_mock_embedding_returns_vectors(self):
+        vectors = self._mock_gateway().embed_texts(["早餐在哪吃", "可以停车吗"])
+        self.assertEqual(len(vectors), 2)
+        self.assertTrue(all(len(vector) == 16 for vector in vectors))
 
     def test_booking_extract_single_and_multi_turn(self):
         service = BookingExtractService(self._mock_gateway())
-        first = service.extract("我们有3个人，开2个房间")
+        first = service.extract("我们3个人，开2个房间")
         second = service.extract("预算1000元，住2天，怎么便宜怎么来", first)
         self.assertEqual(second.guest_count, 3)
         self.assertEqual(second.room_count, 2)
         self.assertEqual(second.budget, 1000)
         self.assertEqual(second.stay_days, 2)
         self.assertIn("价格优先", second.preferences)
+
+    def test_booking_extract_budget_variants(self):
+        service = BookingExtractService(self._mock_gateway())
+        for text in ("4人，2房，900，1天", "4人，2房，900r，1天", "4人，2房，900块钱，1天"):
+            draft = service.extract(text)
+            self.assertEqual(draft.guest_count, 4)
+            self.assertEqual(draft.room_count, 2)
+            self.assertEqual(draft.budget, 900)
+            self.assertEqual(draft.stay_days, 1)
 
     def test_booking_extract_prefers_model_output_when_available(self):
         service = BookingExtractService(
@@ -89,7 +135,7 @@ class AIBusinessServiceTests(unittest.TestCase):
                 }
             )
         )
-        draft = service.extract("帮我安排一下")
+        draft = service.extract("帮我安排一个方案")
         self.assertEqual(draft.guest_count, 6)
         self.assertEqual(draft.room_count, 2)
         self.assertEqual(draft.budget, 1200)
@@ -103,6 +149,18 @@ class AIBusinessServiceTests(unittest.TestCase):
         recommendations = service.recommend(draft, catalog.available_rooms())
         self.assertGreaterEqual(len(recommendations), 1)
         self.assertLessEqual(len(recommendations), 3)
+        self.assertTrue(all(item.selectable_room_numbers for item in recommendations))
+        self.assertTrue(all(item.room_signature for item in recommendations))
+
+    def test_recommendation_collapses_equivalent_room_sets(self):
+        catalog = RoomCatalogService()
+        service = RecommendationService(self._mock_gateway())
+        draft = BookingDraft(guest_count=8, room_count=2, budget=3000, stay_days=3, guest_type="多人")
+        recommendations = service.recommend(draft, catalog.available_rooms())
+        self.assertGreaterEqual(len(recommendations), 2)
+        self.assertEqual(len({item.room_signature for item in recommendations}), len(recommendations))
+        first = recommendations[0]
+        self.assertGreater(len(first.selectable_room_numbers), len(first.room_numbers))
 
     def test_recommendation_copy_failure_does_not_break_candidates(self):
         catalog = RoomCatalogService()
@@ -162,13 +220,14 @@ class AIBusinessServiceTests(unittest.TestCase):
             tmp_path = Path(tmp)
             source = ExcelRepository.create_template(tmp_path / "source.xlsx")
             service = FileService(tmp_path / "uploads")
-            uploaded = service.upload_excel(source)
+            workspace_id, uploaded = service.create_workspace_from_upload(source)
+            self.assertTrue(workspace_id.startswith("ws_"))
             self.assertTrue(uploaded.exists())
-            self.assertTrue(service.has_uploaded_excel())
+            self.assertTrue(service.has_uploaded_excel(workspace_id))
             invalid = tmp_path / "bad.txt"
             invalid.write_text("bad", encoding="utf-8")
             with self.assertRaises(AppError):
-                service.upload_excel(invalid)
+                service.create_workspace_from_upload(invalid)
 
     def test_file_upload_initializes_blank_workbook(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -179,7 +238,7 @@ class AIBusinessServiceTests(unittest.TestCase):
             workbook.close()
 
             service = FileService(tmp_path / "uploads")
-            uploaded = service.upload_excel(source)
+            workspace_id, uploaded = service.create_workspace_from_upload(source)
 
             workbook = __import__("openpyxl").load_workbook(uploaded)
             self.assertIn("订单表单", workbook.sheetnames)
@@ -189,7 +248,11 @@ class AIBusinessServiceTests(unittest.TestCase):
             self.assertEqual(form_headers, FORM_HEADERS)
             self.assertEqual(room_headers, ROOM_STATUS_HEADERS)
             workbook.close()
+            self.assertEqual(service.get_download_path(workspace_id).name, "data.xlsx")
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+

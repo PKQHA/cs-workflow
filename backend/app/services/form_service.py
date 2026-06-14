@@ -1,10 +1,12 @@
+﻿from collections import Counter
 from datetime import datetime
 from uuid import uuid4
 
-from app.core.errors import ExcelNotUploadedError, NotFoundError
+from app.core.errors import ExcelNotUploadedError, NotFoundError, BusinessRuleError
 from app.repositories.excel_repository import ExcelRepository
 from app.rules.booking_requirements_rule import get_system_checkin_date
 from app.rules.form_rules import ensure_can_complete_pending, ensure_valid_order_status, room_status_for_order
+from app.rules.recommendation_rules import room_descriptor
 from app.rules.room_rules import ensure_rooms_are_available
 from app.schemas.domain import OrderForm
 from app.schemas.requests import CreateFormRequest, FromRecommendationRequest
@@ -51,6 +53,7 @@ class FormService:
         return form
 
     def create_from_recommendation(self, request: FromRecommendationRequest, recommendation) -> OrderForm:
+        selected_room_numbers = self._resolve_recommendation_room_numbers(request, recommendation)
         create_request = CreateFormRequest(
             contact_name=request.contact_name,
             gender=request.gender,
@@ -59,10 +62,38 @@ class FormService:
             guest_count=recommendation.guest_count,
             guest_type=recommendation.guest_type,
             stay_days=recommendation.stay_days,
-            room_numbers=recommendation.room_numbers,
+            room_numbers=selected_room_numbers,
             order_status=request.order_status,
         )
         return self.create_form(create_request)
+
+    def _resolve_recommendation_room_numbers(self, request: FromRecommendationRequest, recommendation) -> list[str]:
+        selected = request.selected_room_numbers or recommendation.room_numbers
+        normalized = [room_number.strip() for room_number in selected if str(room_number).strip()]
+        if len(normalized) != recommendation.room_count:
+            raise BusinessRuleError("ROOM_SELECTION_INVALID", f"该方案需要选择 {recommendation.room_count} 间房。")
+        if len(set(normalized)) != len(normalized):
+            raise BusinessRuleError("ROOM_SELECTION_INVALID", "所选房号不能重复。")
+        if any(room_number not in recommendation.selectable_room_numbers for room_number in normalized):
+            raise BusinessRuleError("ROOM_SELECTION_INVALID", "所选房号不在当前推荐方案的可选范围内。")
+
+        rooms = [self.room_catalog.get_room(room_number) for room_number in normalized]
+        if any(room is None for room in rooms):
+            missing = [normalized[index] for index, room in enumerate(rooms) if room is None]
+            raise NotFoundError("ROOM_NOT_FOUND", f"房间不存在：{'、'.join(missing)}")
+
+        selected_signature = self._room_signature_for_selection([room for room in rooms if room is not None])
+        if selected_signature != recommendation.room_signature:
+            raise BusinessRuleError("ROOM_SELECTION_INVALID", "所选房号与当前推荐方案的房型组合不一致。")
+        return normalized
+
+    @staticmethod
+    def _room_signature_for_selection(rooms) -> str:
+        descriptors = sorted(
+            f"{capacity}:{category}:{special}:{price:.2f}"
+            for capacity, category, special, price in (room_descriptor(room) for room in rooms)
+        )
+        return "|".join(descriptors)
 
     def list_pending_forms(self) -> list[dict[str, str]]:
         if not self.excel_repository:

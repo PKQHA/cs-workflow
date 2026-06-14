@@ -1,4 +1,4 @@
-from datetime import date, datetime
+﻿from datetime import date, datetime
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -66,13 +66,15 @@ class BookingDraft(BaseModel):
     @classmethod
     def validate_guest_type(cls, value: str | None) -> str | None:
         if value is not None and value not in GUEST_TYPES:
-            raise ValueError("人数类型必须是 个人、多人、企业团建 或 情侣。")
+            raise ValueError("客群类型必须是 个人、多人、企业团建 或 情侣。")
         return value
 
 
 class RecommendationItem(BaseModel):
     recommendation_id: str = Field(min_length=1)
     room_numbers: list[str] = Field(min_length=1)
+    selectable_room_numbers: list[str] = Field(default_factory=list)
+    room_signature: str = Field(min_length=1)
     total_amount: float = Field(gt=0)
     guest_count: int = Field(ge=1)
     room_count: int = Field(ge=1)
@@ -85,7 +87,7 @@ class RecommendationItem(BaseModel):
     @classmethod
     def validate_guest_type(cls, value: str) -> str:
         if value not in GUEST_TYPES:
-            raise ValueError("推荐方案人数类型不合法。")
+            raise ValueError("推荐方案客群类型不合法。")
         return value
 
 
@@ -116,7 +118,7 @@ class OrderForm(BaseModel):
     @classmethod
     def validate_guest_type(cls, value: str) -> str:
         if value not in GUEST_TYPES:
-            raise ValueError("人数类型不合法。")
+            raise ValueError("客群类型不合法。")
         return value
 
     @field_validator("order_status")

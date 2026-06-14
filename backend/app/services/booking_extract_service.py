@@ -1,4 +1,4 @@
-import re
+﻿import re
 
 from app.rules.booking_requirements_rule import normalize_guest_type
 from app.schemas.domain import BookingDraft
@@ -45,13 +45,37 @@ class BookingExtractService:
 
     def _extract_with_rules(self, text: str) -> BookingDraft:
         return BookingDraft(
-            guest_count=self._number_before_any_unit(text, ("人", "位")),
-            room_count=self._number_before_any_unit(text, ("间", "房")),
-            budget=self._first_float(text, (r"预算\s*(\d+(?:\.\d+)?)", r"(\d+(?:\.\d+)?)\s*(?:r|元|块)")),
-            stay_days=self._number_before_any_unit(text, ("天",)) or self._first_int(text, (r"住\s*(\d+)",)),
+            guest_count=self._extract_guest_count(text),
+            room_count=self._extract_room_count(text),
+            budget=self._extract_budget(text),
+            stay_days=self._extract_stay_days(text),
             guest_type=self._guest_type(text),
             preferences=self._preferences(text),
         )
+
+    def _extract_guest_count(self, text: str) -> int | None:
+        return self._first_int(text, (r"(\d+)\s*(?:个)?(?:人|位)",))
+
+    def _extract_room_count(self, text: str) -> int | None:
+        return self._first_int(text, (r"(\d+)\s*(?:间房|个房间|间|房)",))
+
+    def _extract_stay_days(self, text: str) -> int | None:
+        return self._first_int(text, (r"(\d+)\s*(?:天|晚)", r"住\s*(\d+)"))
+
+    def _extract_budget(self, text: str) -> float | None:
+        explicit_budget = self._first_float(
+            text,
+            (
+                r"预算\s*(\d+(?:\.\d+)?)",
+                r"(\d+(?:\.\d+)?)\s*(?:r|rb|rmb|元|块|块钱)",
+            ),
+        )
+        if explicit_budget is not None:
+            return explicit_budget
+
+        number_candidates = [int(match.group(0)) for match in re.finditer(r"\d+", text)]
+        filtered_candidates = [value for value in number_candidates if value >= 100]
+        return float(filtered_candidates[0]) if filtered_candidates else None
 
     @staticmethod
     def _first_int(text: str, patterns: tuple[str, ...]) -> int | None:
@@ -59,15 +83,6 @@ class BookingExtractService:
             match = re.search(pattern, text, flags=re.IGNORECASE)
             if match:
                 return int(match.group(1))
-        return None
-
-    @staticmethod
-    def _number_before_any_unit(text: str, units: tuple[str, ...]) -> int | None:
-        for match in re.finditer(r"\d+", text):
-            value = match.group(0)
-            nearby = text[match.end() : match.end() + 4]
-            if any(unit in nearby for unit in units):
-                return int(value)
         return None
 
     @staticmethod

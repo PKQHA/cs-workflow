@@ -1,4 +1,4 @@
-from random import Random
+﻿from random import Random
 
 from app.repositories.excel_repository import ExcelRepository
 from app.rules.room_rules import ensure_can_manual_release, ensure_room_exists
@@ -28,6 +28,27 @@ class RoomStatusService:
 
     def list_available_rooms(self):
         return self.catalog.available_rooms()
+
+    def get_room_status(self, room_number: str):
+        return self.catalog.get_room(room_number)
+
+    def available_room_count(self) -> int:
+        return len(self.catalog.available_rooms())
+
+    def has_available_rooms(self) -> bool:
+        return self.available_room_count() > 0
+
+    def build_room_status_reply(self, room_number: str) -> str:
+        room = self.get_room_status(room_number)
+        if room is None:
+            return f"您好，暂时没有查到 {room_number} 房间的房态信息，需要客服进一步确认。"
+        return f"您好，{room_number} 房间当前状态为{room.status}。"
+
+    def build_availability_reply(self) -> str:
+        available_count = self.available_room_count()
+        if available_count > 0:
+            return f"您好，目前还有空房，当前可用空房数量为 {available_count} 间。"
+        return "您好，目前暂时没有空房，需要客服进一步确认后为您安排。"
 
     def release_room_to_available(self, room_number: str):
         room = ensure_room_exists(self.catalog.get_room(room_number), room_number)

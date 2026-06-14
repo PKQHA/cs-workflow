@@ -1,11 +1,15 @@
-# 总体进度
+﻿# 总体进度
 
 ## 使用说明
 
 1. 每个模块对应一个独立任务文件。
-2. 子任务采用 checklist 形式管理。
+2. 子任务使用 checklist 形式管理。
 3. 完成后将 `- [ ]` 改为 `- [x]`。
 4. 建议按“基础设施 -> 规则与数据 -> 业务服务 -> API -> 前端”顺序推进。
+
+## 最近更新
+
+- 已完成 workspace 隔离 Excel 副本改造：上传生成独立工作区、前端恢复 `workspace_id`、后端按 workspace 路由读写、支持下载当前 `data.xlsx`。
 
 ## 模块任务文件
 
@@ -17,7 +21,7 @@
 | 数据结构与 Schema | `tasks/schemas.md` | 已完成 |
 | 会话上下文 | `tasks/conversation-context.md` | 已完成 |
 | AI 网关 | `tasks/ai-gateway.md` | 已完成 |
-| 意图识别 | `tasks/intent.md` | 进行中 |
+| 意图识别 | `tasks/intent.md` | 已完成 |
 | 知识问答 | `tasks/knowledge.md` | 已完成 |
 | 订房信息抽取 | `tasks/booking-extract.md` | 已完成 |
 | 订房必填校验规则 | `tasks/booking-rules.md` | 已完成 |
@@ -40,7 +44,6 @@
 | 测试体系 | `tasks/testing.md` | 进行中 |
 
 ## 推荐开发顺序
-
 1. `repo-scaffold`
 2. `config`
 3. `backend-main`

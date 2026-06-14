@@ -8,6 +8,7 @@ from frontend.pages.files import render_files_page
 from frontend.pages.forms import render_forms_page
 from frontend.pages.rooms import render_rooms_page
 from frontend.services.api_client import ApiClientError, get_api_client, get_backend_base_url
+from frontend.state.conversation_state import sync_workspace_state
 
 
 def hide_streamlit_default_navigation() -> None:
@@ -26,6 +27,7 @@ def hide_streamlit_default_navigation() -> None:
 def main() -> None:
     st.set_page_config(page_title="酒店客服自动化系统", layout="wide")
     hide_streamlit_default_navigation()
+    sync_workspace_state()
     st.title("酒店客服自动化系统")
 
     try:

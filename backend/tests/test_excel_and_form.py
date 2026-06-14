@@ -1,4 +1,4 @@
-import tempfile
+﻿import tempfile
 import unittest
 from pathlib import Path
 
@@ -6,7 +6,8 @@ from openpyxl import load_workbook
 
 from app.core.errors import ExcelNotUploadedError
 from app.repositories.excel_repository import ExcelRepository
-from app.schemas.requests import CreateFormRequest
+from app.schemas.domain import RecommendationItem
+from app.schemas.requests import CreateFormRequest, FromRecommendationRequest
 from app.services.form_service import FormService
 from app.services.room_catalog_service import RoomCatalogService
 
@@ -65,6 +66,39 @@ class ExcelAndFormTests(unittest.TestCase):
         )
         self.assertEqual(created.room_status_result, "已住")
         self.assertEqual(catalog.get_room("201").status, "已住")
+
+    def test_create_from_recommendation_allows_manual_room_selection(self):
+        catalog = RoomCatalogService()
+        repository = ExcelRepository(self.excel_path)
+        service = FormService(repository, catalog)
+        recommendation = RecommendationItem(
+            recommendation_id="rec_001",
+            room_numbers=["202", "203"],
+            selectable_room_numbers=["202", "203", "205", "301"],
+            room_signature="多人间:普通房::268.00|多人间:普通房::268.00",
+            total_amount=1608,
+            guest_count=8,
+            room_count=2,
+            stay_days=3,
+            guest_type="多人",
+            reason_text="demo",
+            reply_text="demo",
+        )
+        form = service.create_from_recommendation(
+            FromRecommendationRequest(
+                session_id="s1",
+                recommendation_id="rec_001",
+                contact_name="王五",
+                gender="男",
+                phone="13800000000",
+                selected_room_numbers=["205", "301"],
+                order_status="待完成",
+            ),
+            recommendation,
+        )
+        self.assertEqual(form.room_numbers, ["205", "301"])
+        self.assertEqual(catalog.get_room("205").status, "已预订")
+        self.assertEqual(catalog.get_room("301").status, "已预订")
 
     def test_unuploaded_excel_blocks_form_creation(self):
         service = FormService(None, RoomCatalogService())

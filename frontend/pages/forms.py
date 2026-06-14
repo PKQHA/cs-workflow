@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import streamlit as st
 
@@ -24,20 +24,21 @@ def render_forms_page(api_client: BackendApiClient) -> None:
             if submitted:
                 room_numbers = [item.strip() for item in room_numbers_text.split(",") if item.strip()]
                 try:
-                    result = api_client.post(
-                        "/api/forms/create",
-                        {
-                            "contact_name": contact_name,
-                            "gender": gender,
-                            "phone": phone,
-                            "total_amount": total_amount,
-                            "guest_count": guest_count,
-                            "guest_type": guest_type,
-                            "stay_days": stay_days,
-                            "room_numbers": room_numbers,
-                            "order_status": order_status,
-                        },
-                    )
+                    with st.spinner("正在创建表单…"):
+                        result = api_client.post(
+                            "/api/forms/create",
+                            {
+                                "contact_name": contact_name,
+                                "gender": gender,
+                                "phone": phone,
+                                "total_amount": total_amount,
+                                "guest_count": guest_count,
+                                "guest_type": guest_type,
+                                "stay_days": stay_days,
+                                "room_numbers": room_numbers,
+                                "order_status": order_status,
+                            },
+                        )
                     st.success(f"表单创建成功：{result.get('form_id')}")
                 except ApiClientError as exc:
                     st.error(exc.message)
@@ -65,7 +66,8 @@ def _render_pending_forms(api_client: BackendApiClient) -> None:
             st.json(form)
             if st.button("改为已完成", key=f"complete_{form_id}"):
                 try:
-                    api_client.post("/api/forms/complete", {"form_id": form_id})
+                    with st.spinner("正在更新表单状态…"):
+                        api_client.post("/api/forms/complete", {"form_id": form_id})
                     st.success("已更新为已完成")
                     st.rerun()
                 except ApiClientError as exc:
